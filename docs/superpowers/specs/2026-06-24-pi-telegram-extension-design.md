@@ -1,7 +1,7 @@
 # Дизайн: pi-telegram-extension
 
 **Дата:** 2026-06-24
-**Статус:** черновик на ревью
+**Статус:** утверждён (ревизия 2 — после разведки исходников pi)
 **Автор:** Мартин (с Максимом)
 
 ## Контекст и цель
@@ -20,42 +20,91 @@ Telegram запускает новый процесс `pi -p --mode json …`, �
   Можно `tmux attach` по SSH и со-управлять руками — Telegram и терминал смотрят в один агент.
 - **Модель сессий:** один Telegram-чат ↔ один живущий агент pi. Одновременно «думает» один
   агент. Из чата можно стартовать новую сессию (`/new`) или подключиться к старой (`/resume`).
-- **Формат:** npm-публикуемый пакет с полем `pi.extensions` в `package.json`. Публикация
-  позже; на сервер ставим через git (`pi install git:…`) или локально.
+- **`/new` и `/resume`** реализуются через **wrapper-перезапуск** (см. ниже): фоновому коду
+  extension'а методы `newSession`/`switchSession` недоступны (это установленный факт, см.
+  раздел «Граница возможностей фонового extension»), поэтому переключение сессии = перезапуск
+  pi обёрткой с нужным `--session`.
+- **Формат:** npm-структура (`package.json` с полем `pi.extensions`), публикация в npm — позже.
+  На сервер ставим через git (`pi install git:…`) или локально.
 - **Секреты:** токен бота и whitelist хранятся в **конфиге самого pi** (`settings.json`),
   не в `.env`.
 - **Старый `bot.mjs`:** заменяется extension'ом (остаётся в истории git).
 
+## Граница возможностей фонового extension (факты из исходников pi)
+
+Фоновый Telegram-цикл (стартует в `session_start`, ловит `pi` и базовый `ctx` в замыкание)
+**может** через `pi.*` и `ctx`:
+
+- `pi.sendUserMessage(text)` / `pi.sendUserMessage(text, { deliverAs })` — слать запрос агенту
+  (всегда триггерит ход; **без `deliverAs` бросает исключение во время стриминга** — гейтить через `ctx.isIdle()`)
+- `pi.setModel(model)` (`Promise<boolean>`), `pi.setThinkingLevel(level)`, `pi.getThinkingLevel()`
+- `pi.setSessionName(name)`, `pi.getSessionName()`
+- `ctx.abort()`, `ctx.shutdown()` (отложенный до простоя), `ctx.compact()`, `ctx.getContextUsage()`
+- `ctx.sessionManager` (readonly: `getSessionId/getSessionFile/getSessionName/getSessionDir/getEntries/getBranch`)
+- `ctx.modelRegistry` (`getAvailable()/getAll()/find(provider,id)`), `ctx.model`
+- `SessionManager.list(cwd, sessionDir)` (static) → `SessionInfo[]` (`path/id/name/firstMessage/modified/…`)
+- `pi.exec(command, args, options)` — выполнить процесс
+- подписка на события: `session_start/session_shutdown/message_end/tool_execution_start/…`
+
+**Не может из фона:** `ctx.newSession()`, `ctx.switchSession()`, `ctx.fork()`,
+`ctx.navigateTree()` — они есть только в `ExtensionCommandContext` (выдаётся обработчику
+slash-команды, набранной человеком в TUI, либо внешнему RPC-клиенту). Программного «выполни
+команду» в публичном API нет; официальный пример `subagent` для программных запусков спавнит
+отдельный процесс pi. → отсюда wrapper-перезапуск для `/new` и `/resume`.
+
 ## Архитектура (модель запуска)
 
-На сервере `coding` под **systemd** поднимается `pi` в интерактивном TUI **внутри tmux**.
-Extension авто-загружается (установлен в `~/.pi/agent/`). Extension и есть Telegram-мост:
-держит long-poll Telegram и связывает входящие сообщения с одной живой сессией pi.
+На сервере `coding` под **systemd**:
 
-Принципиальная смена относительно старого бота: вместо `spawn("pi")` на каждое сообщение —
-подписка на типизированные события **внутри** процесса pi.
+```
+systemd ─→ tmux (сессия "pi") ─→ bin/pi-telegram.sh (цикл-обёртка)
+                                       │
+                                       └─ loop: pi  (TUI, с авто-загруженным extension)
+```
+
+Цикл-обёртка перезапускает pi, читая «намерение перезапуска» из control-файла:
+
+```
+while true:
+  intent = read(control_file)         # "new" | "<session-id>" | "quit" | пусто
+  clear(control_file)
+  case intent:
+    "quit"          -> break
+    "<session-id>"  -> pi --session <id> --session-dir <dir>
+    "new" | пусто   -> pi --session-dir <dir>     # свежая сессия
+  # pi работает в TUI; когда extension зовёт ctx.shutdown(), pi выходит → цикл повторяется
+```
+
+Extension — и есть Telegram-мост: держит long-poll Telegram, связывает входящие сообщения с
+живой сессией pi, стримит ответы обратно. На `/new` и `/resume` он пишет намерение в
+control-файл и зовёт `ctx.shutdown()` → обёртка перезапускает pi с нужной сессией.
+`tmux attach` к сессии "pi" даёт со-управление руками.
 
 ## Компоненты
 
-Модульная структура с малыми, тестируемыми единицами:
-
 ```
 pi-telegram-extension/
-├── package.json              # name, pi.extensions: ["./src/index.ts"], dependencies
+├── package.json              # "type":"module", "pi":{"extensions":["./src/index.ts"]}, devDeps (vitest)
 ├── src/
-│   ├── index.ts              # фабрика: чтение конфига, регистрация команд/флагов, lifecycle
+│   ├── index.ts              # фабрика: конфиг, регистрация флагов, lifecycle-подписки, сборка моста
 │   ├── config.ts             # чтение блока telegramBot из settings.json pi
-│   ├── telegram.ts           # клиент Telegram API: tg/send/sendDocument/typing/long-poll
-│   ├── bridge.ts             # события pi → Telegram; входящие → sendUserMessage
-│   ├── commands.ts           # роутер команд /new /resume /session /name /model /thinking /export /stop /help
+│   ├── telegram.ts           # клиент Telegram API: tg/send/sendDocument/typing + long-poll
+│   ├── bridge.ts             # события pi → Telegram; входящие → sendUserMessage/команды
+│   ├── commands.ts           # парсинг и обработка /new /resume /session /name /model /thinking /export /stop /help
+│   ├── relaunch.ts           # протокол control-файла (запись намерения, чтение+очистка, анонс при старте)
 │   └── util.ts               # describeTool, extractText, нарезка сообщений 4096
-├── pi-telegram-bot.service   # systemd-юнит (обновлён: запуск pi в tmux)
-├── README.md                 # установка, пример блока settings.json
-└── docs/superpowers/specs/2026-06-24-pi-telegram-extension-design.md
+├── bin/pi-telegram.sh        # цикл-обёртка для запуска pi в tmux с перезапуском
+├── pi-telegram-bot.service   # systemd-юнит (запускает tmux + обёртку)
+├── README.md                 # установка, пример блока settings.json, запуск
+└── docs/superpowers/…        # спека и план
 ```
 
-Чистые функции (`describeTool`, `extractText`, нарезка, разбор команд, whitelist) изолированы
-в `util.ts`/`commands.ts` — тестируются без pi и Telegram.
+Чистые функции (`describeTool`, `extractText`, нарезка, парсинг команд, парсинг конфига,
+протокол control-файла) изолированы и тестируются без pi и Telegram.
+
+**Зависимостей рантайма нет:** используем глобальные `fetch`/`FormData`/`Blob` (Node 22+) и
+типы из `@earendil-works/pi-coding-agent` (доступен в среде pi всегда, в `dependencies` не пишем).
+`vitest` — только в `devDependencies`.
 
 ## Конфигурация (в settings.json pi)
 
@@ -71,94 +120,105 @@ pi-telegram-extension/
 }
 ```
 
-Чтение блока: предпочтительно через нативный аксессор настроек из `ExtensionAPI`/`ctx`,
-если он существует; иначе — `config.ts` читает `~/.pi/agent/settings.json` напрямую через
-`node:fs`/`node:path` и парсит `telegramBot`. Точный механизм — спайк (см. ниже).
+`config.ts` читает `~/.pi/agent/settings.json` через `node:fs`/`node:path`, парсит блок
+`telegramBot`, валидирует наличие `token` и непустого `allowedUserIds`. Отдельного аксессора
+настроек у pi нет — читаем файл сами. Дефолтные провайдер/модель берём из штатного
+`settings.json` pi (`defaultModel`). Отдельного `.env` для секретов нет.
 
-Дефолтные провайдер/модель берём из штатного `settings.json` pi (`defaultModel`) — отдельные
-`PI_PROVIDER`/`PI_MODEL` не нужны. Отдельного `.env` для секретов нет.
+## Жизненный цикл extension'а
 
-## Жизненный цикл
+- **Фабрика** `export default function (pi)`: читает конфиг, регистрирует флаги. Long-poll тут
+  **не запускаем** (ограничение pi: фоновые ресурсы — только из `session_start`).
+- **`session_start`:** анонс в чат («🆕 новая сессия» / «↩️ сессия N»), старт long-poll Telegram,
+  сохранение хэндла для очистки.
+- **`session_shutdown`:** остановка long-poll, очистка таймеров.
 
-- **Фабрика** `export default function (pi)`: читает конфиг, регистрирует команды/флаги.
-  Long-poll здесь **не запускаем** (ограничение pi: фоновые ресурсы — только из `session_start`).
-- **`session_start`:** старт long-poll Telegram; сохранение хэндла для последующей очистки.
-- **`session_shutdown`:** остановка long-poll, очистка таймеров/ресурсов.
+При `/new`/`/resume` pi перезапускается → фабрика и `session_start` отрабатывают заново →
+long-poll переподнимается. Offset Telegram сбрасывается, но сервер Telegram сам помнит
+подтверждённый offset, поэтому дублей нет.
 
 ## Поток данных
 
 ### Входящий (Telegram → pi)
 
 1. Long-poll `getUpdates` → сообщение.
-2. Проверка whitelist (`allowedUserIds`). Иначе — «⛔ Доступ запрещён».
-3. Если текст начинается с `/` → роутер команд (см. маппинг).
-4. Иначе → `pi.sendUserMessage(text, { triggerTurn: true })`, если агент простаивает;
-   если занят — `{ deliverAs: "followUp" }` (очередь).
+2. Whitelist-проверка (`allowedUserIds`). Иначе — «⛔ Доступ запрещён».
+3. Если текст начинается с `/` → роутер команд.
+4. Иначе → если `ctx.isIdle()`: `pi.sendUserMessage(text)`; если занят: `pi.sendUserMessage(text, { deliverAs: "followUp" })`.
 
 ### Исходящий (pi → Telegram)
 
-- `tool_execution_start` → `🔧 describeTool(name, args)`
-- `message_end` (assistant) → `extractText` → отправка с нарезкой по 4096; учёт токенов usage
+- `tool_execution_start` → `🔧 describeTool(toolName, args)`
+- `message_end` (assistant) → `extractText(message)` → отправка с нарезкой 4096; учёт токенов
 - ошибка (`stopReason: "error"`) → `⚠️ Ошибка: …`
 
 ## Маппинг команд
 
 | Команда | Реализация |
 |---|---|
-| `/new` | `ctx.newSession()` |
-| `/resume [N]` | список сессий (через `sessionManager`/файлы) → `ctx.switchSession(path)` |
-| `/session` | данные из `ctx.sessionManager` (id, модель, thinking, токены) |
-| `/name <имя>` | нативное имя сессии pi (фоллбэк — локальный мини-стейт) |
-| `/model [имя]` | `ctx.modelRegistry` + смена модели *(точный API — спайк)* |
-| `/thinking [ур.]` | смена уровня рассуждений *(точный API — спайк)* |
-| `/export` | путь файла сессии из `sessionManager` → экспорт в HTML *(API или `spawn pi --export` — спайк)* |
+| `/new` | `relaunch.requestRelaunch("new")` → `ctx.shutdown()` (обёртка стартует свежую сессию) |
+| `/resume [N]` | без N: список через `SessionManager.list(ctx.cwd, dir)`; с N: `requestRelaunch(id)` → `ctx.shutdown()` |
+| `/session` | `ctx.sessionManager` (id, имя) + `ctx.model` + `ctx.getContextUsage()` + `pi.getThinkingLevel()` |
+| `/name <имя>` | `pi.setSessionName(имя)` / `pi.getSessionName()` |
+| `/model [имя]` | без имени: `ctx.modelRegistry.getAvailable()`; с именем: `find` по `id` → `pi.setModel(model)` |
+| `/thinking [ур.]` | без ур.: `pi.getThinkingLevel()`; с ур.: `pi.setThinkingLevel(level)` |
+| `/export` | путь сессии `ctx.sessionManager.getSessionFile()` → `pi.exec(PI_BIN, ["--export", file])` → отправка HTML |
 | `/stop` | `ctx.abort()` |
 | `/help` | статичный текст |
 
+Уровни thinking: `off/minimal/low/medium/high/xhigh` (валидируем по `ThinkingLevel`).
+
 ## Состояние
 
-Опираемся на штатное состояние pi (сессии, имя, модель, thinking — pi персистит сам).
-Свой `state.json` убираем (или оставляем минимальный — только то, чего pi не хранит,
-например кастомные отображаемые имена, если нативное именование сессий не подойдёт).
-Это убирает значительную часть кода старого бота (YAGNI).
+Опираемся на штатное состояние pi (сессии, имя, модель, thinking — pi персистит сам). Свой
+`state.json` не нужен. Между перезапусками передаётся только «намерение» через control-файл
+(`relaunch.ts`). Это убирает значительную часть кода старого бота (YAGNI).
 
-## Подтверждение tool-вызовов в headless
+## Подтверждение tool-вызовов
 
-Telegram-инициированные ходы не должны блокироваться на диалогах подтверждения в TUI.
-Политика — **авто-одобрение** инструментов (как старый запуск с `-p`); доступ и так закрыт
-whitelist'ом. Реализация: через событие `tool_call` (пропускать) либо настройку
-approval-политики pi. Точный механизм — спайк.
+Не требуется: по умолчанию pi исполняет инструменты без подтверждения (одобрение —
+отдельный опциональный паттерн через `on("tool_call")` + `{block}`, пример `permission-gate.ts`).
+Доступ к боту и так закрыт whitelist'ом.
 
 ## Обработка ошибок
 
-- Telegram API: лог + ретрай поллинга через 3с (как в текущем боте).
+- Telegram API: лог + ретрай поллинга через 3с.
 - Ошибки агента (`stopReason: error`) → `⚠️` в чат.
 - Падение long-poll → catch / sleep 3с / continue.
 - Корректная остановка ресурсов на `session_shutdown`.
 - Нарезка сообщений > 4096 символов (лимит Telegram).
+- Невалидный/отсутствующий конфиг → понятная ошибка в лог при старте.
 
 ## Тестирование
 
-- **TDD на чистых функциях:** `describeTool`, `extractText`, нарезка сообщений, парсинг
-  команд, проверка whitelist — без pi и Telegram.
-- **Telegram-клиент:** мок `fetch`.
-- **E2E:** ручной smoke через `pi -e ./src/index.ts` с тестовым ботом.
-- **Сборки нет:** pi грузит `.ts` напрямую; пакет везёт `src/*.ts`.
+- **TDD на чистых функциях** (vitest): `describeTool`, `extractText`, нарезка сообщений,
+  парсинг команд, парсинг конфига, протокол control-файла.
+- **Telegram-клиент:** инъекция `fetch` (мок) → проверка формирования запросов и нарезки.
+- **E2E:** ручной smoke через `pi -e ./src/index.ts` с тестовым ботом; проверка перезапуска
+  обёрткой на `/new` и `/resume`.
+- **Сборки нет:** pi грузит `.ts` напрямую (jiti); пакет везёт `src/*.ts`.
 
-## Известные неизвестные (спайки в начале реализации)
+## Подтверждённый API pi (из исходников)
 
-Закрываются фактами из реальных типов установленного `@earendil-works/pi-coding-agent`
-(прочитать `.d.ts`/исходники на сервере), а не догадками:
+- Фабрика: `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"; export default function (pi: ExtensionAPI) {…}`
+- `pi.on(event, handler)` — события из раздела «Граница возможностей».
+- `pi.registerCommand(name, { description, handler: async (args, ctx) => {} })`
+- `pi.registerFlag(name, { description, type, default })`, `pi.getFlag(name)`
+- `pi.sendUserMessage`, `pi.setModel`, `pi.setThinkingLevel`, `pi.getThinkingLevel`,
+  `pi.setSessionName`, `pi.getSessionName`, `pi.exec`
+- `ctx.isIdle()`, `ctx.abort()`, `ctx.shutdown()`, `ctx.getContextUsage()`, `ctx.cwd`,
+  `ctx.sessionManager`, `ctx.modelRegistry`, `ctx.model`, `ctx.ui.notify(msg, "info"|"warning"|"error")`
+- `SessionManager.list(cwd, sessionDir?)` (static, импорт `{ SessionManager }`) → `SessionInfo[]`
+- `Model` имеет `.id/.name/.provider`; `ThinkingLevel` — строковый литерал.
 
-1. Точные сигнатуры: `sendUserMessage` (idle/busy, `triggerTurn`/`deliverAs`),
-   `ctx.newSession`/`switchSession`, перечисление сессий.
-2. API смены модели и уровня thinking из extension (`ctx.modelRegistry` и смежное).
-3. Доступ к настройкам из extension: нативный аксессор vs чтение `settings.json` через `fs`.
-4. Авто-одобрение tool-вызовов в TUI/headless.
-5. `/export`: нативный API vs `spawn pi --export`.
+## Остаточные мелкие проверки (в начале реализации, фактом на сервере)
+
+1. Точная сигнатура/опции `pi.exec` (signal, cwd) для `--export`.
+2. Строковые значения `ThinkingLevel` (сверить с импортируемым типом).
+3. Что `pi --session <id> --session-dir <dir>` корректно резюмирует (как в старом боте — да).
 
 ## Первый шаг реализации
 
-Прочитать реальные типы/исходники `@earendil-works/pi-coding-agent` на сервере и закрыть
-спайки 1–5 фактами. Затем — TDD по чистым функциям, далее `bridge.ts`/`commands.ts`,
-ручной smoke через `pi -e`.
+Скаффолд пакета + tooling (vitest), затем TDD по чистым функциям (`util`, `config`,
+`commands`, `relaunch`), далее `telegram` (мок fetch), `bridge`, сборка в `index.ts`,
+обёртка `bin/pi-telegram.sh` + systemd, ручной smoke через `pi -e`.
