@@ -1,0 +1,19 @@
+[Unit]
+Description=pi Telegram bridge bot (управление pi-агентом через Telegram)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=max
+WorkingDirectory=/home/max/pi-telegram-bot
+EnvironmentFile=/home/max/pi-telegram-bot/.env
+# PATH с бинарниками pi-node (через стабильный symlink current)
+Environment=PATH=/home/max/.local/share/pi-node/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=/home/max
+ExecStart=/home/max/.local/share/pi-node/current/bin/node /home/max/pi-telegram-bot/bot.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
