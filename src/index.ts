@@ -14,7 +14,7 @@ export default function (pi: ExtensionAPI): void {
   const config = loadConfig();
   const telegram = new TelegramClient(config.token);
   // В приватном чате chat.id === user.id — шлём исходящее первому из whitelist.
-  const targetChat = Number(config.allowedUserIds[0]);
+  const targetChat = config.allowedUserIds[0];
 
   let poller: AbortController | undefined;
 
@@ -62,7 +62,7 @@ function buildDeps(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   telegram: TelegramClient,
-  targetChat: number,
+  targetChat: string,
 ): CommandDeps {
   const listModels = (): ModelItem[] =>
     ctx.modelRegistry.getAvailable().map((m: { id: string; name: string; provider: string }) => ({ id: m.id, name: m.name, provider: m.provider }));
