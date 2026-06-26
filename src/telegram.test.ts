@@ -36,22 +36,23 @@ describe("TelegramClient.send", () => {
 });
 
 describe("TelegramClient.poll", () => {
-  it("обрабатывает апдейты, двигает offset и останавливается по signal", async () => {
-    const responses = [
-      { ok: true, result: [{ update_id: 5, message: { chat: { id: 1 }, text: "hi" } }] },
-      { ok: true, result: [] },
-    ];
-    const { fn, calls } = fakeFetch(responses);
-    const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
+  it("двигает offset до update_id+1 на следующем запросе и стопается по signal", async () => {
+    const calls: string[] = [];
     const ac = new AbortController();
+    const fn = vi.fn(async (url: string) => {
+      calls.push(url);
+      if (calls.length >= 2) ac.abort();
+      const body = calls.length === 1
+        ? { ok: true, result: [{ update_id: 5, message: { chat: { id: 1 }, text: "hi" } }] }
+        : { ok: true, result: [] };
+      return { json: async () => body } as Response;
+    });
+    const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
     const seen: number[] = [];
-    const p = tg.poll((u) => {
-      seen.push(u.update_id);
-      ac.abort();
-    }, ac.signal);
-    await p;
+    await tg.poll((u) => { seen.push(u.update_id); }, ac.signal);
     expect(seen).toEqual([5]);
-    // второй getUpdates ушёл с offset=6
-    expect(calls[0].url).toContain("offset=0");
+    expect(calls.length).toBe(2);
+    expect(calls[0]).toContain("offset=0");
+    expect(calls[1]).toContain("offset=6");
   });
 });
