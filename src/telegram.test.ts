@@ -35,6 +35,24 @@ describe("TelegramClient.send", () => {
   });
 });
 
+describe("TelegramClient.sendDocument", () => {
+  it("отправляет ровно байты файла (а не весь пул Buffer)", async () => {
+    let captured: Blob | undefined;
+    const fn = vi.fn(async (_url: string, init?: any) => {
+      captured = (init.body as FormData).get("document") as Blob;
+      return { json: async () => ({ ok: true }) } as Response;
+    });
+    const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
+    // Buffer view with non-zero offset over a larger pool
+    const pool = Buffer.from([0xff, 0xff, 0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e, 0xff]); // ...<html>...
+    const view = pool.subarray(2, 8); // bytes for "<html>"
+    const ok = await tg.sendDocument(1, view, "session.html");
+    expect(ok).toBe(true);
+    const bytes = new Uint8Array(await captured!.arrayBuffer());
+    expect(Array.from(bytes)).toEqual([0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e]);
+  });
+});
+
 describe("TelegramClient.poll", () => {
   it("двигает offset до update_id+1 на следующем запросе и стопается по signal", async () => {
     const calls: string[] = [];

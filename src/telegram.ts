@@ -69,7 +69,7 @@ export class TelegramClient {
     try {
       const form = new FormData();
       form.append("chat_id", String(chatId));
-      form.append("document", new Blob([buffer.buffer as ArrayBuffer], { type: "text/html" }), filename);
+      form.append("document", new Blob([new Uint8Array(buffer)], { type: "text/html" }), filename);
       const r = await this.fetchFn(`${this.api}/sendDocument`, { method: "POST", body: form });
       const j = await r.json();
       if (!j.ok) console.error("sendDocument:", JSON.stringify(j));
