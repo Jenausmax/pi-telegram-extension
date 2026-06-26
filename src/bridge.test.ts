@@ -1,0 +1,100 @@
+import { describe, it, expect, vi } from "vitest";
+import { makeIncomingHandler, forwardMessageEnd, forwardToolStart } from "./bridge.ts";
+import type { CommandDeps } from "./commands.ts";
+
+function deps(): CommandDeps {
+  return {
+    send: vi.fn(async () => {}),
+    isIdle: () => true,
+    setModel: vi.fn(async () => ({ ok: true })),
+    listModels: () => [],
+    getThinkingLevel: () => "medium",
+    setThinkingLevel: vi.fn(),
+    getSessionName: () => undefined,
+    setSessionName: vi.fn(),
+    sessionInfo: () => ({ thinking: "medium", tokens: null }),
+    listSessions: vi.fn(async () => []),
+    requestRelaunch: vi.fn(),
+    shutdown: vi.fn(),
+    abort: vi.fn(),
+    exportSession: vi.fn(async () => {}),
+  };
+}
+
+describe("makeIncomingHandler", () => {
+  it("отклоняет не-whitelist пользователя", async () => {
+    const sendRejection = vi.fn(async () => {});
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => true,
+      sendRejection,
+    });
+    await h({ update_id: 1, message: { chat: { id: 999 }, from: { id: 999 }, text: "hi" } });
+    expect(sendRejection).toHaveBeenCalledWith(999);
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("обычный текст от разрешённого → sendUserMessage", async () => {
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => true,
+      sendRejection: vi.fn(async () => {}),
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "сделай X" } });
+    expect(sendUserMessage).toHaveBeenCalledWith("сделай X", undefined);
+  });
+
+  it("когда агент занят → deliverAs followUp", async () => {
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => false,
+      sendRejection: vi.fn(async () => {}),
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "ещё" } });
+    expect(sendUserMessage).toHaveBeenCalledWith("ещё", { deliverAs: "followUp" });
+  });
+
+  it("команда не уходит в sendUserMessage", async () => {
+    const sendUserMessage = vi.fn();
+    const d = deps();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: d,
+      sendUserMessage,
+      isIdle: () => true,
+      sendRejection: vi.fn(async () => {}),
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "/help" } });
+    expect(sendUserMessage).not.toHaveBeenCalled();
+    expect(d.send).toHaveBeenCalled();
+  });
+});
+
+describe("forwarders", () => {
+  it("forwardMessageEnd шлёт текст ассистента", async () => {
+    const send = vi.fn(async () => {});
+    await forwardMessageEnd({ role: "assistant", content: [{ type: "text", text: "готово" }] }, send);
+    expect(send).toHaveBeenCalledWith("готово");
+  });
+
+  it("forwardMessageEnd молчит на пустом тексте", async () => {
+    const send = vi.fn(async () => {});
+    await forwardMessageEnd({ role: "assistant", content: [] }, send);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("forwardToolStart шлёт 🔧 описание", async () => {
+    const send = vi.fn(async () => {});
+    await forwardToolStart("bash", { command: "ls" }, send);
+    expect(send).toHaveBeenCalledWith("🔧 bash: ls");
+  });
+});
