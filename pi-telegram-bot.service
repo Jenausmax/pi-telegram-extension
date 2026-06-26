@@ -1,17 +1,21 @@
 [Unit]
-Description=pi Telegram bridge bot (управление pi-агентом через Telegram)
+Description=pi Telegram bridge (extension в TUI pi через tmux)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=forking
 User=max
-WorkingDirectory=/home/max/pi-telegram-bot
-EnvironmentFile=/home/max/pi-telegram-bot/.env
-# PATH с бинарниками pi-node (через стабильный symlink current)
-Environment=PATH=/home/max/.local/share/pi-node/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=/home/max/pi-telegram-extension
 Environment=HOME=/home/max
-ExecStart=/home/max/.local/share/pi-node/current/bin/node /home/max/pi-telegram-bot/bot.mjs
+Environment=PATH=/home/max/.local/share/pi-node/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PI_BIN=/home/max/.local/share/pi-node/current/bin/pi
+Environment=PI_SESSION_DIR=/home/max/.pi/agent/sessions
+Environment=PI_TG_CONTROL_FILE=/home/max/.pi/agent/telegram-bridge-relaunch
+# tmux даёт pty для TUI pi; сессия "pi" — можно подключиться: tmux attach -t pi
+ExecStart=/usr/bin/tmux new-session -d -s pi /home/max/pi-telegram-extension/bin/pi-telegram.sh
+ExecStop=/usr/bin/tmux kill-session -t pi
+RemainAfterExit=yes
 Restart=on-failure
 RestartSec=5
 
