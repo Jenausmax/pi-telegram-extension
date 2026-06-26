@@ -28,9 +28,13 @@ export function parseConfig(raw: string): TelegramBotConfig {
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new Error("settings.json: telegramBot.allowedUserIds пуст");
   }
+  const cleaned = ids.map((x) => String(x).trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    throw new Error("settings.json: telegramBot.allowedUserIds пуст");
+  }
   return {
     token: token.trim(),
-    allowedUserIds: ids.map((x) => String(x).trim()).filter(Boolean),
+    allowedUserIds: cleaned,
   };
 }
 

@@ -18,4 +18,7 @@ describe("parseConfig", () => {
   it("пустой allowedUserIds", () => {
     expect(() => parseConfig(JSON.stringify({ telegramBot: { token: "t", allowedUserIds: [] } }))).toThrow(/allowedUserIds/);
   });
+  it("allowedUserIds только пробелы становятся пустым", () => {
+    expect(() => parseConfig(JSON.stringify({ telegramBot: { token: "t", allowedUserIds: [" ", "  "] } }))).toThrow(/allowedUserIds/);
+  });
 });
