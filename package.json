@@ -1,0 +1,19 @@
+{
+  "name": "pi-telegram-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram как второй фронтенд к живой сессии pi coding agent",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
