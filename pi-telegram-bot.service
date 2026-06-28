@@ -9,6 +9,9 @@ User=max
 WorkingDirectory=/home/max/pi-telegram-extension
 Environment=HOME=/home/max
 Environment=PATH=/home/max/.local/share/pi-node/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Ключ провайдера (ZAI_CODING_API_KEY) — из .env; models.json ссылается на $ZAI_CODING_API_KEY.
+# EnvironmentFile идёт ДО явных Environment= ниже, чтобы они перебивали одноимённые значения из .env.
+EnvironmentFile=/home/max/pi-telegram-bot/.env
 Environment=PI_BIN=/home/max/.local/share/pi-node/current/bin/pi
 Environment=PI_SESSION_DIR=/home/max/.pi/agent/sessions
 Environment=PI_TG_CONTROL_FILE=/home/max/.pi/agent/telegram-bridge-relaunch
