@@ -31,6 +31,8 @@ describe("makeIncomingHandler", () => {
       sendUserMessage,
       isIdle: () => true,
       sendRejection,
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
     });
     await h({ update_id: 1, message: { chat: { id: 999 }, from: { id: 999 }, text: "hi" } });
     expect(sendRejection).toHaveBeenCalledWith(999);
@@ -45,6 +47,8 @@ describe("makeIncomingHandler", () => {
       sendUserMessage,
       isIdle: () => true,
       sendRejection: vi.fn(async () => {}),
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
     });
     await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "сделай X" } });
     expect(sendUserMessage).toHaveBeenCalledWith("сделай X", undefined);
@@ -58,6 +62,8 @@ describe("makeIncomingHandler", () => {
       sendUserMessage,
       isIdle: () => false,
       sendRejection: vi.fn(async () => {}),
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
     });
     await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "ещё" } });
     expect(sendUserMessage).toHaveBeenCalledWith("ещё", { deliverAs: "followUp" });
@@ -72,6 +78,8 @@ describe("makeIncomingHandler", () => {
       sendUserMessage,
       isIdle: () => true,
       sendRejection: vi.fn(async () => {}),
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
     });
     await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "/help" } });
     expect(sendUserMessage).not.toHaveBeenCalled();
@@ -80,7 +88,7 @@ describe("makeIncomingHandler", () => {
 
   it("голос: эхо 🎙 и подача текста агенту", async () => {
     const send = vi.fn(async () => {});
-    const getVoiceText = vi.fn(async () => ({ ok: true, text: "распознанный текст" }));
+    const getVoiceText = vi.fn(async () => ({ ok: true as const, text: "распознанный текст" }));
     const sendUserMessage = vi.fn();
     const h = makeIncomingHandler({
       allowedUserIds: ["111"],
@@ -99,7 +107,7 @@ describe("makeIncomingHandler", () => {
 
   it("голос с ошибкой распознавания: шлёт reason, агента не зовёт", async () => {
     const send = vi.fn(async () => {});
-    const getVoiceText = vi.fn(async () => ({ ok: false, reason: "⚠️ Не разобрал голос, повтори." }));
+    const getVoiceText = vi.fn(async () => ({ ok: false as const, reason: "⚠️ Не разобрал голос, повтори." }));
     const sendUserMessage = vi.fn();
     const h = makeIncomingHandler({
       allowedUserIds: ["111"],
@@ -117,7 +125,7 @@ describe("makeIncomingHandler", () => {
 
   it("голос от не-whitelist: отклонён, без распознавания", async () => {
     const send = vi.fn(async () => {});
-    const getVoiceText = vi.fn(async () => ({ ok: true, text: "распознанный текст" }));
+    const getVoiceText = vi.fn(async () => ({ ok: true as const, text: "распознанный текст" }));
     const h = makeIncomingHandler({
       allowedUserIds: ["111"],
       deps: deps(),

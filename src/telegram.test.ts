@@ -80,7 +80,7 @@ describe("TelegramClient.getFile", () => {
     const fn = vi.fn(async () => ({ json: async () => ({ ok: true, result: { file_path: "voice/file_1.oga" } }) } as Response));
     const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
     expect(await tg.getFile("AbC")).toBe("voice/file_1.oga");
-    expect(JSON.parse((fn.mock.calls[0][1] as any).body)).toEqual({ file_id: "AbC" });
+    expect(JSON.parse(((fn.mock.calls as any)[0][1]).body)).toEqual({ file_id: "AbC" });
   });
   it("бросает, если ok=false", async () => {
     const fn = vi.fn(async () => ({ json: async () => ({ ok: false, description: "bad" }) } as Response));
