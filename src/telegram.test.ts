@@ -74,3 +74,30 @@ describe("TelegramClient.poll", () => {
     expect(calls[1]).toContain("offset=6");
   });
 });
+
+describe("TelegramClient.getFile", () => {
+  it("возвращает file_path из getFile", async () => {
+    const fn = vi.fn(async () => ({ json: async () => ({ ok: true, result: { file_path: "voice/file_1.oga" } }) } as Response));
+    const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
+    expect(await tg.getFile("AbC")).toBe("voice/file_1.oga");
+    expect(JSON.parse((fn.mock.calls[0][1] as any).body)).toEqual({ file_id: "AbC" });
+  });
+  it("бросает, если ok=false", async () => {
+    const fn = vi.fn(async () => ({ json: async () => ({ ok: false, description: "bad" }) } as Response));
+    const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
+    await expect(tg.getFile("x")).rejects.toThrow();
+  });
+});
+
+describe("TelegramClient.downloadFile", () => {
+  it("качает байты с file-эндпоинта", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const fn = vi.fn(async (url: string) => {
+      expect(url).toBe("https://api.telegram.org/file/botTKN/voice/file_1.oga");
+      return { ok: true, arrayBuffer: async () => bytes.buffer } as unknown as Response;
+    });
+    const tg = new TelegramClient("TKN", fn as unknown as typeof fetch);
+    const out = await tg.downloadFile("voice/file_1.oga");
+    expect(Array.from(out)).toEqual([1, 2, 3, 4]);
+  });
+});
