@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=forking
 User=max
-WorkingDirectory=/home/max/pi-telegram-extension
+WorkingDirectory=/home/max
 Environment=HOME=/home/max
 Environment=PATH=/home/max/.local/share/pi-node/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Ключ провайдера (ZAI_CODING_API_KEY) — из .env; models.json ссылается на $ZAI_CODING_API_KEY.
