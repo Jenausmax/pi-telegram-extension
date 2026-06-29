@@ -5,6 +5,7 @@ import { join } from "node:path";
 export interface TelegramBotConfig {
   token: string;
   allowedUserIds: string[];
+  sttUrl: string;
 }
 
 export function parseConfig(raw: string): TelegramBotConfig {
@@ -32,9 +33,12 @@ export function parseConfig(raw: string): TelegramBotConfig {
   if (cleaned.length === 0) {
     throw new Error("settings.json: telegramBot.allowedUserIds пуст");
   }
+  const rawSttUrl = (block as { sttUrl?: unknown }).sttUrl;
+  const sttUrl = typeof rawSttUrl === "string" && rawSttUrl.trim() ? rawSttUrl.trim() : "http://127.0.0.1:8765";
   return {
     token: token.trim(),
     allowedUserIds: cleaned,
+    sttUrl,
   };
 }
 

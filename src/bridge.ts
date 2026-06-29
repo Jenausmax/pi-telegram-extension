@@ -2,17 +2,37 @@ import { handleCommand, type CommandDeps } from "./commands.ts";
 import { describeTool, extractText } from "./util.ts";
 import type { TelegramUpdate } from "./telegram.ts";
 
+export interface VoiceMeta {
+  file_id: string;
+  duration?: number;
+  file_size?: number;
+}
+
+export type VoiceResult = { ok: true; text: string } | { ok: false; reason: string };
+
 export interface IncomingHandlerOptions {
   allowedUserIds: string[];
   deps: CommandDeps;
   sendUserMessage: (text: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
   isIdle: () => boolean;
   sendRejection: (chatId: number) => Promise<void>;
+  /** Отправка сообщения пользователю (эхо распознанного текста и предупреждения по голосу). */
+  send: (text: string) => Promise<void>;
+  /** Скачать и распознать голосовое. */
+  getVoiceText: (voice: VoiceMeta) => Promise<VoiceResult>;
 }
 
 /** Создаёт обработчик входящего Telegram-апдейта, сериализованный (без гонок). */
 export function makeIncomingHandler(opts: IncomingHandlerOptions): (u: TelegramUpdate) => Promise<void> {
   let queue: Promise<void> = Promise.resolve();
+
+  const feed = (text: string): void => {
+    if (opts.isIdle()) {
+      opts.sendUserMessage(text, undefined);
+    } else {
+      opts.sendUserMessage(text, { deliverAs: "followUp" });
+    }
+  };
 
   const process = async (u: TelegramUpdate): Promise<void> => {
     const msg = u.message;
@@ -22,17 +42,26 @@ export function makeIncomingHandler(opts: IncomingHandlerOptions): (u: TelegramU
       await opts.sendRejection(msg.chat.id);
       return;
     }
+
+    // Голосовое: распознать → эхо → подать агенту (всегда промпт, не команда).
+    if (msg.voice) {
+      const res = await opts.getVoiceText(msg.voice);
+      if (!res.ok) {
+        await opts.send(res.reason);
+        return;
+      }
+      await opts.send(`🎙 ${res.text}`);
+      feed(res.text);
+      return;
+    }
+
     const text = (msg.text ?? "").trim();
     if (!text) return;
 
     const handled = await handleCommand(text, opts.deps);
     if (handled) return;
 
-    if (opts.isIdle()) {
-      opts.sendUserMessage(text, undefined);
-    } else {
-      opts.sendUserMessage(text, { deliverAs: "followUp" });
-    }
+    feed(text);
   };
 
   return (u: TelegramUpdate): Promise<void> => {

@@ -6,6 +6,7 @@ export interface TelegramUpdate {
     chat: { id: number };
     from?: { id: number; username?: string };
     text?: string;
+    voice?: { file_id: string; duration?: number; file_size?: number; mime_type?: string };
   };
 }
 
@@ -26,8 +27,10 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 export class TelegramClient {
   private readonly api: string;
+  private readonly fileApi: string;
   constructor(token: string, private readonly fetchFn: typeof fetch = fetch) {
     this.api = `https://api.telegram.org/bot${token}`;
+    this.fileApi = `https://api.telegram.org/file/bot${token}`;
   }
 
   async call(method: string, body?: unknown): Promise<any> {
@@ -78,6 +81,20 @@ export class TelegramClient {
       console.error("sendDocument:", (e as Error).message);
       return false;
     }
+  }
+
+  async getFile(fileId: string): Promise<string> {
+    const j = await this.call("getFile", { file_id: fileId });
+    if (!j.ok || !j.result?.file_path) {
+      throw new Error(`getFile: ${j.description || "нет file_path"}`);
+    }
+    return j.result.file_path as string;
+  }
+
+  async downloadFile(filePath: string): Promise<Uint8Array> {
+    const r = await this.fetchFn(`${this.fileApi}/${filePath}`);
+    if (!r.ok) throw new Error(`downloadFile: HTTP ${r.status}`);
+    return new Uint8Array(await r.arrayBuffer());
   }
 
   /** Long-poll getUpdates до срабатывания signal. onUpdate вызывается на каждый апдейт. */
