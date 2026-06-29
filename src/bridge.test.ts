@@ -77,6 +77,59 @@ describe("makeIncomingHandler", () => {
     expect(sendUserMessage).not.toHaveBeenCalled();
     expect(d.send).toHaveBeenCalled();
   });
+
+  it("голос: эхо 🎙 и подача текста агенту", async () => {
+    const send = vi.fn(async () => {});
+    const getVoiceText = vi.fn(async () => ({ ok: true, text: "распознанный текст" }));
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => true,
+      sendRejection: vi.fn(async () => {}),
+      send,
+      getVoiceText,
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, voice: { file_id: "F" } } });
+    expect(getVoiceText).toHaveBeenCalledWith({ file_id: "F" });
+    expect(send).toHaveBeenCalledWith("🎙 распознанный текст");
+    expect(sendUserMessage).toHaveBeenCalledWith("распознанный текст", undefined);
+  });
+
+  it("голос с ошибкой распознавания: шлёт reason, агента не зовёт", async () => {
+    const send = vi.fn(async () => {});
+    const getVoiceText = vi.fn(async () => ({ ok: false, reason: "⚠️ Не разобрал голос, повтори." }));
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => true,
+      sendRejection: vi.fn(async () => {}),
+      send,
+      getVoiceText,
+    });
+    await h({ update_id: 2, message: { chat: { id: 111 }, from: { id: 111 }, voice: { file_id: "F" } } });
+    expect(send).toHaveBeenCalledWith("⚠️ Не разобрал голос, повтори.");
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("голос от не-whitelist: отклонён, без распознавания", async () => {
+    const send = vi.fn(async () => {});
+    const getVoiceText = vi.fn(async () => ({ ok: true, text: "распознанный текст" }));
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage: vi.fn(),
+      isIdle: () => true,
+      sendRejection: vi.fn(async () => {}),
+      send,
+      getVoiceText,
+    });
+    await h({ update_id: 3, message: { chat: { id: 999 }, from: { id: 999 }, voice: { file_id: "F" } } });
+    expect(getVoiceText).not.toHaveBeenCalled();
+  });
 });
 
 describe("forwarders", () => {
