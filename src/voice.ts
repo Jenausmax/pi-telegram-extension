@@ -5,7 +5,7 @@ export class SttClient {
   /** Готов ли STT-сервис (модель загружена). Никогда не бросает. */
   async health(): Promise<boolean> {
     try {
-      const r = await this.fetchFn(`${this.baseUrl}/health`);
+      const r = await this.fetchFn(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(1000) });
       if (!r.ok) return false;
       const j = await r.json();
       return j?.status === "ok";
