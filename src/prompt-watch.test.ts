@@ -116,16 +116,21 @@ describe("createWatchdog", () => {
 });
 
 describe("interpretAnswer", () => {
-  it("число → набрать цифру и Enter", () => {
-    expect(interpretAnswer("1")).toEqual([
-      { type: "literal", value: "1" },
-      { type: "key", value: "Enter" },
-    ]);
+  it("одиночная цифра → только цифра, без Enter (пикер сам подтверждает)", () => {
+    expect(interpretAnswer("1")).toEqual([{ type: "literal", value: "1" }]);
+    expect(interpretAnswer("2")).toEqual([{ type: "literal", value: "2" }]);
   });
 
   it("текст → literal-ввод и Enter", () => {
     expect(interpretAnswer("гостевую без пароля")).toEqual([
       { type: "literal", value: "гостевую без пароля" },
+      { type: "key", value: "Enter" },
+    ]);
+  });
+
+  it("многозначное число трактуется как текст (нужен Enter)", () => {
+    expect(interpretAnswer("12")).toEqual([
+      { type: "literal", value: "12" },
       { type: "key", value: "Enter" },
     ]);
   });
@@ -137,9 +142,6 @@ describe("interpretAnswer", () => {
   });
 
   it("обрезает пробелы", () => {
-    expect(interpretAnswer("  2  ")).toEqual([
-      { type: "literal", value: "2" },
-      { type: "key", value: "Enter" },
-    ]);
+    expect(interpretAnswer("  2  ")).toEqual([{ type: "literal", value: "2" }]);
   });
 });

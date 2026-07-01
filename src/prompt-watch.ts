@@ -132,8 +132,11 @@ export function interpretAnswer(text: string): KeyAction[] {
   if (CANCEL_WORDS.has(t.toLowerCase())) {
     return [{ type: "key", value: "Escape" }];
   }
-  return [
-    { type: "literal", value: t },
-    { type: "key", value: "Enter" },
-  ];
+  // Одиночная цифра: пикер сам выбирает вариант N и подтверждает/переходит —
+  // Enter лишний (иначе он роняет мусорное сообщение в редактор после закрытия пикера).
+  if (/^[1-9]$/.test(t)) {
+    return [{ type: "literal", value: t }];
+  }
+  // Свободный текст (freeText / «Other…») — нужен Enter для отправки поля ввода.
+  return [{ type: "literal", value: t }, { type: "key", value: "Enter" }];
 }

@@ -161,10 +161,7 @@ describe("маршрутизация ответа при ожидании (Фа�
       sendKeys,
     });
     await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "1" } });
-    expect(sendKeys).toHaveBeenCalledWith([
-      { type: "literal", value: "1" },
-      { type: "key", value: "Enter" },
-    ]);
+    expect(sendKeys).toHaveBeenCalledWith([{ type: "literal", value: "1" }]);
     expect(sendUserMessage).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith("↳ отправил: 1");
   });
