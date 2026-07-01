@@ -1,4 +1,5 @@
 import { handleCommand, type CommandDeps } from "./commands.ts";
+import { interpretAnswer, type KeyAction, type PendingAsk } from "./prompt-watch.ts";
 import { describeTool, extractText } from "./util.ts";
 import type { TelegramUpdate } from "./telegram.ts";
 
@@ -20,6 +21,12 @@ export interface IncomingHandlerOptions {
   send: (text: string) => Promise<void>;
   /** Скачать и распознать голосовое. */
   getVoiceText: (voice: VoiceMeta) => Promise<VoiceResult>;
+  /** Состояние ожидания ответа агента (Фаза 2). */
+  askState?: { current: PendingAsk | null };
+  /** Включён ли ответ из Telegram. */
+  answerFromTelegram?: boolean;
+  /** Отправка клавиш в TUI (tmux). */
+  sendKeys?: (actions: KeyAction[]) => Promise<void>;
 }
 
 /** Создаёт обработчик входящего Telegram-апдейта, сериализованный (без гонок). */
@@ -32,6 +39,16 @@ export function makeIncomingHandler(opts: IncomingHandlerOptions): (u: TelegramU
     } else {
       opts.sendUserMessage(text, { deliverAs: "followUp" });
     }
+  };
+
+  /** Маршрутизирует текст: если активен режим ответа-клавишей — отправляет в TUI, иначе в агент. */
+  const routeText = async (text: string): Promise<void> => {
+    if (opts.answerFromTelegram && opts.askState?.current && opts.sendKeys) {
+      await opts.sendKeys(interpretAnswer(text));
+      await opts.send(`↳ отправил: ${text}`);
+      return;
+    }
+    feed(text);
   };
 
   const process = async (u: TelegramUpdate): Promise<void> => {
@@ -51,7 +68,7 @@ export function makeIncomingHandler(opts: IncomingHandlerOptions): (u: TelegramU
         return;
       }
       await opts.send(`🎙 ${res.text}`);
-      feed(res.text);
+      await routeText(res.text);
       return;
     }
 
@@ -61,7 +78,7 @@ export function makeIncomingHandler(opts: IncomingHandlerOptions): (u: TelegramU
     const handled = await handleCommand(text, opts.deps);
     if (handled) return;
 
-    feed(text);
+    await routeText(text);
   };
 
   return (u: TelegramUpdate): Promise<void> => {

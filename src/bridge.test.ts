@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { makeIncomingHandler, forwardMessageEnd, forwardToolStart } from "./bridge.ts";
 import type { CommandDeps } from "./commands.ts";
+import type { PendingAsk } from "./prompt-watch.ts";
 
 function deps(): CommandDeps {
   return {
@@ -137,6 +138,95 @@ describe("makeIncomingHandler", () => {
     });
     await h({ update_id: 3, message: { chat: { id: 999 }, from: { id: 999 }, voice: { file_id: "F" } } });
     expect(getVoiceText).not.toHaveBeenCalled();
+  });
+});
+
+describe("маршрутизация ответа при ожидании (Фаза 2)", () => {
+  const pending: PendingAsk = { tool: "ask_pro", questions: [], since: 0 };
+
+  it("pending + answerFromTelegram → sendKeys, не sendUserMessage", async () => {
+    const sendKeys = vi.fn(async () => {});
+    const sendUserMessage = vi.fn();
+    const send = vi.fn(async () => {});
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => false,
+      sendRejection: vi.fn(async () => {}),
+      send,
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
+      askState: { current: pending },
+      answerFromTelegram: true,
+      sendKeys,
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "1" } });
+    expect(sendKeys).toHaveBeenCalledWith([
+      { type: "literal", value: "1" },
+      { type: "key", value: "Enter" },
+    ]);
+    expect(sendUserMessage).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith("↳ отправил: 1");
+  });
+
+  it("answerFromTelegram=false → обычный feed даже при pending", async () => {
+    const sendKeys = vi.fn(async () => {});
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => false,
+      sendRejection: vi.fn(async () => {}),
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
+      askState: { current: pending },
+      answerFromTelegram: false,
+      sendKeys,
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "1" } });
+    expect(sendKeys).not.toHaveBeenCalled();
+    expect(sendUserMessage).toHaveBeenCalledWith("1", { deliverAs: "followUp" });
+  });
+
+  it("нет pending → обычный feed", async () => {
+    const sendKeys = vi.fn(async () => {});
+    const sendUserMessage = vi.fn();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: deps(),
+      sendUserMessage,
+      isIdle: () => true,
+      sendRejection: vi.fn(async () => {}),
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
+      askState: { current: null },
+      answerFromTelegram: true,
+      sendKeys,
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "привет" } });
+    expect(sendKeys).not.toHaveBeenCalled();
+    expect(sendUserMessage).toHaveBeenCalledWith("привет", undefined);
+  });
+
+  it("команда обрабатывается раньше ответа-клавишами", async () => {
+    const sendKeys = vi.fn(async () => {});
+    const d = deps();
+    const h = makeIncomingHandler({
+      allowedUserIds: ["111"],
+      deps: d,
+      sendUserMessage: vi.fn(),
+      isIdle: () => false,
+      sendRejection: vi.fn(async () => {}),
+      send: vi.fn(async () => {}),
+      getVoiceText: vi.fn(async () => ({ ok: true as const, text: "" })),
+      askState: { current: pending },
+      answerFromTelegram: true,
+      sendKeys,
+    });
+    await h({ update_id: 1, message: { chat: { id: 111 }, from: { id: 111 }, text: "/help" } });
+    expect(sendKeys).not.toHaveBeenCalled();
+    expect(d.send).toHaveBeenCalled();
   });
 });
 
