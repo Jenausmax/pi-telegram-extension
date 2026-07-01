@@ -6,6 +6,10 @@ export interface TelegramBotConfig {
   token: string;
   allowedUserIds: string[];
   sttUrl: string;
+  interactiveTools: string[];
+  stallTimeoutSec: number;
+  tmuxSession: string;
+  answerFromTelegram: boolean;
 }
 
 export function parseConfig(raw: string): TelegramBotConfig {
@@ -35,10 +39,29 @@ export function parseConfig(raw: string): TelegramBotConfig {
   }
   const rawSttUrl = (block as { sttUrl?: unknown }).sttUrl;
   const sttUrl = typeof rawSttUrl === "string" && rawSttUrl.trim() ? rawSttUrl.trim() : "http://127.0.0.1:8765";
+
+  const toolsRaw = (block as { interactiveTools?: unknown }).interactiveTools;
+  const interactiveTools = Array.isArray(toolsRaw)
+    ? toolsRaw.map((x) => String(x).trim()).filter(Boolean)
+    : ["ask_pro", "soly_ask_user"];
+
+  const stallRaw = (block as { stallTimeoutSec?: unknown }).stallTimeoutSec;
+  const stallTimeoutSec = typeof stallRaw === "number" && stallRaw > 0 ? stallRaw : 180;
+
+  const sessRaw = (block as { tmuxSession?: unknown }).tmuxSession;
+  const tmuxSession = typeof sessRaw === "string" && sessRaw.trim() ? sessRaw.trim() : "pi";
+
+  const answerRaw = (block as { answerFromTelegram?: unknown }).answerFromTelegram;
+  const answerFromTelegram = typeof answerRaw === "boolean" ? answerRaw : true;
+
   return {
     token: token.trim(),
     allowedUserIds: cleaned,
     sttUrl,
+    interactiveTools,
+    stallTimeoutSec,
+    tmuxSession,
+    answerFromTelegram,
   };
 }
 
