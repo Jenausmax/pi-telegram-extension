@@ -13,7 +13,7 @@ import { makeIncomingHandler, forwardMessageEnd, forwardToolStart } from "./brid
 import { requestRelaunch, readAndClearIntent } from "./relaunch.ts";
 import { SttClient } from "./voice.ts";
 import { ensureSttRunning, sttVenvDir, venvPython, sttServerScript, sttRequirements } from "./stt.ts";
-import { parseAskArgs, formatAskNotification, createWatchdog, type PendingAsk } from "./prompt-watch.ts";
+import { parseAskArgs, formatAskNotification, createWatchdog, type PendingAsk, type KeyAction } from "./prompt-watch.ts";
 
 const PI_BIN = process.env.PI_BIN || "pi";
 const STT_PORT = Number(process.env.STT_PORT || "8765");
@@ -84,6 +84,9 @@ export default function (pi: ExtensionAPI): void {
       },
       send: (text) => telegram.send(targetChat, text),
       getVoiceText: (voice) => getVoiceText(telegram, stt, voice),
+      askState,
+      answerFromTelegram: config.answerFromTelegram,
+      sendKeys: makeTmuxSendKeys(config.tmuxSession),
     });
 
     poller = new AbortController();
@@ -238,6 +241,23 @@ function execFile(cmd: string, args: string[]): Promise<{ code: number; stdout: 
     child.on("error", (e) => resolve({ code: 1, stdout, stderr: stderr + e.message }));
     child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
   });
+}
+
+/** Отправка действий-клавиш в TUI через tmux send-keys. literal-текст — через -l. */
+function makeTmuxSendKeys(session: string): (actions: KeyAction[]) => Promise<void> {
+  return async (actions) => {
+    for (const act of actions) {
+      const args =
+        act.type === "literal"
+          ? ["send-keys", "-t", session, "-l", act.value]
+          : ["send-keys", "-t", session, act.value];
+      await new Promise<void>((resolve) => {
+        const child = spawn("tmux", args, { stdio: "ignore" });
+        child.on("error", () => resolve());
+        child.on("close", () => resolve());
+      });
+    }
+  };
 }
 
 async function getVoiceText(
