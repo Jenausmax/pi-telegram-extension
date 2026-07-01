@@ -13,6 +13,7 @@ import { makeIncomingHandler, forwardMessageEnd, forwardToolStart } from "./brid
 import { requestRelaunch, readAndClearIntent } from "./relaunch.ts";
 import { SttClient } from "./voice.ts";
 import { ensureSttRunning, sttVenvDir, venvPython, sttServerScript, sttRequirements } from "./stt.ts";
+import { parseAskArgs, formatAskNotification, createWatchdog, type PendingAsk } from "./prompt-watch.ts";
 
 const PI_BIN = process.env.PI_BIN || "pi";
 const STT_PORT = Number(process.env.STT_PORT || "8765");
@@ -32,16 +33,34 @@ export default function (pi: ExtensionAPI): void {
   const targetChat = config.allowedUserIds[0];
 
   let poller: AbortController | undefined;
+  let watchdogTimer: ReturnType<typeof setInterval> | undefined;
+  const askState: { current: PendingAsk | null } = { current: null };
+  const watchdog = createWatchdog(config.stallTimeoutSec * 1000);
 
   // --- Исходящие события агента → Telegram ---
   pi.on("tool_execution_start", async (event: { toolName: string; args: Record<string, unknown> }) => {
+    watchdog.noteEvent(Date.now());
+    if (config.interactiveTools.includes(event.toolName)) {
+      const questions = parseAskArgs(event.toolName, event.args);
+      askState.current = { tool: event.toolName, questions, since: Date.now() };
+      await telegram.send(targetChat, formatAskNotification(questions));
+      return;
+    }
     await forwardToolStart(event.toolName, event.args, (t) => telegram.send(targetChat, t));
   });
   pi.on("message_end", async (event: { message: unknown }) => {
+    watchdog.noteEvent(Date.now());
     await forwardMessageEnd(event.message as { role?: string; content?: unknown }, (t) => telegram.send(targetChat, t));
     const m = event.message as { stopReason?: string; errorMessage?: string };
     if (m.stopReason === "error" && m.errorMessage) {
       await telegram.send(targetChat, `⚠️ Ошибка: ${m.errorMessage}`);
+    }
+  });
+  pi.on("tool_execution_end", async (event: { toolName: string }) => {
+    watchdog.noteEvent(Date.now());
+    if (askState.current && askState.current.tool === event.toolName) {
+      askState.current = null;
+      await telegram.send(targetChat, "✅ Принято.");
     }
   });
 
@@ -70,12 +89,22 @@ export default function (pi: ExtensionAPI): void {
     poller = new AbortController();
     void telegram.poll(handler, poller.signal);
 
+    watchdogTimer = setInterval(() => {
+      if (askState.current) return; // уже уведомили по имени инструмента
+      if (watchdog.shouldNotify(Date.now(), ctx.isIdle())) {
+        void telegram.send(targetChat, "🟡 Похоже, агент ждёт ввода в TUI. Проверь сессию или ответь.");
+      }
+    }, 30000);
+    if (typeof watchdogTimer.unref === "function") watchdogTimer.unref();
+
     await telegram.send(targetChat, "🟢 Мост активен. Пиши задачу.");
   });
 
   pi.on("session_shutdown", async () => {
     poller?.abort();
     poller = undefined;
+    if (watchdogTimer) clearInterval(watchdogTimer);
+    watchdogTimer = undefined;
   });
 }
 
