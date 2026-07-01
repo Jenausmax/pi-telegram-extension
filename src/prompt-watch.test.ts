@@ -106,4 +106,11 @@ describe("createWatchdog", () => {
     expect(w.shouldNotify(1000, true)).toBe(false); // idle
     expect(w.shouldNotify(1000, false)).toBe(true); // снова занят и тихо
   });
+
+  it("холодный старт: без noteEvent первый shouldNotify задаёт точку отсчёта", () => {
+    const w = createWatchdog(1000);
+    expect(w.shouldNotify(500, false)).toBe(false); // lastEventTime стал 500
+    expect(w.shouldNotify(1000, false)).toBe(false); // 1000 - 500 < 1000
+    expect(w.shouldNotify(1500, false)).toBe(true); // 1500 - 500 >= 1000
+  });
 });

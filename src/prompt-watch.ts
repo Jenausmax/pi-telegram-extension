@@ -93,7 +93,7 @@ export interface Watchdog {
 
 /** Сторож: сигналит один раз, если агент не idle и N мс нет событий. */
 export function createWatchdog(stallMs: number): Watchdog {
-  let lastEventTime = 0;
+  let lastEventTime: number | undefined = undefined;
   let hasSignaled = false;
   return {
     noteEvent(now: number) {
@@ -101,7 +101,7 @@ export function createWatchdog(stallMs: number): Watchdog {
       hasSignaled = false;
     },
     reset() {
-      lastEventTime = 0;
+      lastEventTime = undefined;
       hasSignaled = false;
     },
     shouldNotify(now: number, isIdle: boolean): boolean {
@@ -110,6 +110,7 @@ export function createWatchdog(stallMs: number): Watchdog {
         return false;
       }
       if (hasSignaled) return false;
+      if (lastEventTime === undefined) lastEventTime = now; // первый вызов = точка отсчёта
       if (now - lastEventTime >= stallMs) {
         hasSignaled = true;
         return true;
