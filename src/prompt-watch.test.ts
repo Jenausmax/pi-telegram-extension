@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAskArgs, formatAskNotification } from "./prompt-watch.ts";
+import { parseAskArgs, formatAskNotification, createWatchdog } from "./prompt-watch.ts";
 
 describe("parseAskArgs", () => {
   it("ask_pro: мультивопрос с вариантами и рекомендацией", () => {
@@ -79,5 +79,31 @@ describe("formatAskNotification", () => {
 
   it("пустой список → общий фолбэк", () => {
     expect(formatAskNotification([])).toContain("ждёт ответа");
+  });
+});
+
+describe("createWatchdog", () => {
+  it("сигналит один раз после тишины, пока агент не idle", () => {
+    const w = createWatchdog(1000);
+    w.noteEvent(0);
+    expect(w.shouldNotify(500, false)).toBe(false); // ещё рано
+    expect(w.shouldNotify(1000, false)).toBe(true); // порог достигнут
+    expect(w.shouldNotify(1500, false)).toBe(false); // повторно не спамит
+  });
+
+  it("событие сбрасывает таймер и право на сигнал", () => {
+    const w = createWatchdog(1000);
+    w.noteEvent(0);
+    expect(w.shouldNotify(1000, false)).toBe(true);
+    w.noteEvent(1000); // пришло событие
+    expect(w.shouldNotify(1500, false)).toBe(false);
+    expect(w.shouldNotify(2000, false)).toBe(true); // снова тишина ≥ 1000
+  });
+
+  it("idle → не сигналит и восстанавливает право на будущий сигнал", () => {
+    const w = createWatchdog(1000);
+    w.noteEvent(0);
+    expect(w.shouldNotify(1000, true)).toBe(false); // idle
+    expect(w.shouldNotify(1000, false)).toBe(true); // снова занят и тихо
   });
 });

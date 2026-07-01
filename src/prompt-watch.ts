@@ -84,3 +84,37 @@ export function formatAskNotification(questions: AskQuestion[]): string {
   );
   return parts.join("\n");
 }
+
+export interface Watchdog {
+  noteEvent(now: number): void;
+  shouldNotify(now: number, isIdle: boolean): boolean;
+  reset(): void;
+}
+
+/** Сторож: сигналит один раз, если агент не idle и N мс нет событий. */
+export function createWatchdog(stallMs: number): Watchdog {
+  let lastEventTime = 0;
+  let hasSignaled = false;
+  return {
+    noteEvent(now: number) {
+      lastEventTime = now;
+      hasSignaled = false;
+    },
+    reset() {
+      lastEventTime = 0;
+      hasSignaled = false;
+    },
+    shouldNotify(now: number, isIdle: boolean): boolean {
+      if (isIdle) {
+        hasSignaled = false;
+        return false;
+      }
+      if (hasSignaled) return false;
+      if (now - lastEventTime >= stallMs) {
+        hasSignaled = true;
+        return true;
+      }
+      return false;
+    },
+  };
+}
