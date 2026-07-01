@@ -1,3 +1,7 @@
+export type KeyAction =
+  | { type: "literal"; value: string }
+  | { type: "key"; value: string };
+
 export interface AskOption {
   label: string;
   recommended?: boolean;
@@ -118,4 +122,18 @@ export function createWatchdog(stallMs: number): Watchdog {
       return false;
     },
   };
+}
+
+const CANCEL_WORDS = new Set(["esc", "cancel", "отмена", "отменить"]);
+
+/** Ответ пользователя из Telegram → действия-клавиши для TUI-пикера. */
+export function interpretAnswer(text: string): KeyAction[] {
+  const t = text.trim();
+  if (CANCEL_WORDS.has(t.toLowerCase())) {
+    return [{ type: "key", value: "Escape" }];
+  }
+  return [
+    { type: "literal", value: t },
+    { type: "key", value: "Enter" },
+  ];
 }

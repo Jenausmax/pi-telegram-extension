@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAskArgs, formatAskNotification, createWatchdog } from "./prompt-watch.ts";
+import { parseAskArgs, formatAskNotification, createWatchdog, interpretAnswer } from "./prompt-watch.ts";
 
 describe("parseAskArgs", () => {
   it("ask_pro: мультивопрос с вариантами и рекомендацией", () => {
@@ -112,5 +112,34 @@ describe("createWatchdog", () => {
     expect(w.shouldNotify(500, false)).toBe(false); // lastEventTime стал 500
     expect(w.shouldNotify(1000, false)).toBe(false); // 1000 - 500 < 1000
     expect(w.shouldNotify(1500, false)).toBe(true); // 1500 - 500 >= 1000
+  });
+});
+
+describe("interpretAnswer", () => {
+  it("число → набрать цифру и Enter", () => {
+    expect(interpretAnswer("1")).toEqual([
+      { type: "literal", value: "1" },
+      { type: "key", value: "Enter" },
+    ]);
+  });
+
+  it("текст → literal-ввод и Enter", () => {
+    expect(interpretAnswer("гостевую без пароля")).toEqual([
+      { type: "literal", value: "гостевую без пароля" },
+      { type: "key", value: "Enter" },
+    ]);
+  });
+
+  it("отмена → Escape", () => {
+    expect(interpretAnswer("отмена")).toEqual([{ type: "key", value: "Escape" }]);
+    expect(interpretAnswer("ESC")).toEqual([{ type: "key", value: "Escape" }]);
+    expect(interpretAnswer(" cancel ")).toEqual([{ type: "key", value: "Escape" }]);
+  });
+
+  it("обрезает пробелы", () => {
+    expect(interpretAnswer("  2  ")).toEqual([
+      { type: "literal", value: "2" },
+      { type: "key", value: "Enter" },
+    ]);
   });
 });
