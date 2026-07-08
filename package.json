@@ -1,15 +1,50 @@
 {
-  "name": "pi-telegram-extension",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@jenausmax/pi-telegram-extension",
+  "version": "0.2.0",
   "type": "module",
   "description": "Telegram как второй фронтенд к живой сессии pi coding agent",
+  "main": "./src/index.ts",
+  "license": "MIT",
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "pi-package",
+    "telegram",
+    "bot",
+    "stt",
+    "whisper",
+    "voice"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jenausmax/pi-telegram-extension.git"
+  },
+  "homepage": "https://github.com/Jenausmax/pi-telegram-extension#readme",
+  "bugs": {
+    "url": "https://github.com/Jenausmax/pi-telegram-extension/issues"
+  },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "pi": {
     "extensions": ["./src/index.ts"]
+  },
+  "files": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "stt/stt_server.py",
+    "stt/requirements.txt",
+    "bin/pi-telegram.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
