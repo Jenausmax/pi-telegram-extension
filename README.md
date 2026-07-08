@@ -10,7 +10,8 @@ Extension авто-загружается в `pi` (TUI), запущенный в
 1. Поставь extension (на сервере с установленным pi):
 
    ```bash
-   pi install git:github.com/Jenausmax/pi-telegram-extension
+   pi install npm:@jenausmax/pi-telegram-extension
+   # или с GitHub: pi install git:github.com/Jenausmax/pi-telegram-extension
    # или локально: склонировать и прописать путь в ~/.pi/agent/settings.json -> "extensions"
    ```
 
